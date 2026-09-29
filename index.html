@@ -94,7 +94,7 @@ body.unlocked .adminbar{ display:flex; }
     <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M9 21V9"/></svg></div>
     <div>
       <h1>Engineering Prep-Year Hub</h1>
-      <p class="subtitle">Ain Shams National University — videos and files for every subject in one place</p>
+      <p class="subtitle">Ain Shams National University — links and files for every subject in one place</p>
     </div>
   </div>
   <div class="stamp" id="stampBtn" title="Admin">SHEET <b id="stampCur">01</b>/<span id="stampTot">14</span></div>
@@ -108,8 +108,8 @@ body.unlocked .adminbar{ display:flex; }
     <h2 id="subjName">—</h2>
     <span class="code mono" id="subjCode">—</span>
   </div>
-  <div class="section-label"><span>Videos</span><span class="ln"></span></div>
-  <div class="grid" id="videoGrid"></div>
+  <div class="section-label"><span>Links</span><span class="ln"></span></div>
+  <div class="grid" id="linkGrid"></div>
   <div class="section-label"><span>PDF Files</span><span class="ln"></span></div>
   <div class="grid" id="pdfGrid"></div>
 </main>
@@ -138,16 +138,21 @@ body.unlocked .adminbar{ display:flex; }
 <div class="modal-bg" id="modalBg">
   <div class="modal">
     <h3>Add a resource</h3>
-    <p class="hint">Adds instantly on this device. Click "⬇ resources.json" after and upload it to GitHub so everyone sees it.</p>
+    <p class="hint">For PDFs, you can upload a file directly — no GitHub PDF step needed. Adds instantly here; click "⬇ resources.json" after and upload it to GitHub so everyone sees it.</p>
     <div class="field"><label>Subject</label><select id="fSubject"></select></div>
     <div class="field"><label>Type</label>
       <div class="seg">
-        <button type="button" id="typeVideo" class="on">Video</button>
+        <button type="button" id="typeVideo" class="on">Link</button>
         <button type="button" id="typePdf">PDF</button>
       </div>
     </div>
     <div class="field"><label>Title</label><input id="fTitle" placeholder="e.g. Chapter 1 walkthrough"></div>
-    <div class="field"><label>Link</label><input id="fUrl" placeholder="https://..."></div>
+    <div class="field" id="urlField"><label>Link</label><input id="fUrl" placeholder="https://..."></div>
+    <div class="field" id="fileField" style="display:none">
+      <label>Or upload a PDF from your device</label>
+      <input type="file" id="fFile" accept="application/pdf">
+      <p id="fileHint" style="font-size:11.5px; color:var(--paper-dim); margin:6px 0 0;"></p>
+    </div>
     <div class="modal-actions">
       <button class="btn ghost" id="cancelBtn">Cancel</button>
       <button class="btn primary" id="saveBtn">Add</button>
@@ -200,11 +205,11 @@ function subjectById(id){ return SUBJECTS.find(s=>s.id===id); }
 
 function cardHtml(r){
   const icon = r.type==='video'
-    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="14" height="14" rx="2"/><path d="M21 8l-4 3 4 3z"/></svg>'
+    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>'
     : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>';
   return '<div class="card" data-id="'+r.id+'"><button class="del" title="Remove">×</button>'
     + '<a href="'+r.url+'" target="_blank" rel="noopener">'
-    + '<div class="kind">'+icon+(r.type==='video'?'VIDEO':'PDF')+'</div>'
+    + '<div class="kind">'+icon+(r.type==='video'?'LINK':'PDF')+'</div>'
     + '<div class="t">'+r.title+'</div></a></div>';
 }
 
@@ -214,11 +219,11 @@ function renderContent(){
   document.getElementById('subjCode').textContent = s.code;
   document.getElementById('stampCur').textContent = String(SUBJECTS.findIndex(x=>x.id===current)+1).padStart(2,'0');
   const mine = resources.filter(r=>r.subject===current);
-  const videos = mine.filter(r=>r.type==='video');
+  const links = mine.filter(r=>r.type==='video');
   const pdfs = mine.filter(r=>r.type==='pdf');
-  const vGrid = document.getElementById('videoGrid');
+  const vGrid = document.getElementById('linkGrid');
   const pGrid = document.getElementById('pdfGrid');
-  vGrid.innerHTML = videos.length ? videos.map(cardHtml).join('') : '<div class="empty">No videos here yet.</div>';
+  vGrid.innerHTML = links.length ? links.map(cardHtml).join('') : '<div class="empty">No links here yet.</div>';
   pGrid.innerHTML = pdfs.length ? pdfs.map(cardHtml).join('') : '<div class="empty">No PDFs here yet.</div>';
   [...vGrid.querySelectorAll('.del'), ...pGrid.querySelectorAll('.del')].forEach(btn=>{
     btn.onclick = (e)=>{
@@ -264,21 +269,60 @@ document.getElementById('lockBtn').onclick = ()=>{ unlocked=false; document.body
 // add-resource modal
 const modalBg = document.getElementById('modalBg');
 let pickedType = 'video';
-document.getElementById('typeVideo').onclick = ()=>{ pickedType='video'; document.getElementById('typeVideo').classList.add('on'); document.getElementById('typePdf').classList.remove('on'); };
-document.getElementById('typePdf').onclick = ()=>{ pickedType='pdf'; document.getElementById('typePdf').classList.add('on'); document.getElementById('typeVideo').classList.remove('on'); };
+function refreshTypeUI(){
+  document.getElementById('fileField').style.display = pickedType==='pdf' ? 'block' : 'none';
+  document.getElementById('urlField').querySelector('label').textContent = pickedType==='pdf' ? 'Or paste a link' : 'Link';
+}
+document.getElementById('typeVideo').onclick = ()=>{ pickedType='video'; document.getElementById('typeVideo').classList.add('on'); document.getElementById('typePdf').classList.remove('on'); refreshTypeUI(); };
+document.getElementById('typePdf').onclick = ()=>{ pickedType='pdf'; document.getElementById('typePdf').classList.add('on'); document.getElementById('typeVideo').classList.remove('on'); refreshTypeUI(); };
+document.getElementById('fFile').addEventListener('change', ()=>{
+  const f = document.getElementById('fFile').files[0];
+  const hint = document.getElementById('fileHint');
+  if(!f){ hint.textContent=''; return; }
+  const mb = (f.size/1024/1024).toFixed(1);
+  hint.textContent = f.name + ' — ' + mb + ' MB';
+  hint.style.color = f.size > 6*1024*1024 ? '#c0392b' : 'var(--paper-dim)';
+  if(f.size > 6*1024*1024) hint.textContent += ' (too large — keep uploads under 6MB, or use a link instead)';
+});
 document.getElementById('fabAdd').onclick = ()=>{
   fSubject.value = current;
   document.getElementById('fTitle').value = '';
   document.getElementById('fUrl').value = '';
+  document.getElementById('fFile').value = '';
+  document.getElementById('fileHint').textContent = '';
+  pickedType = 'video';
+  document.getElementById('typeVideo').classList.add('on');
+  document.getElementById('typePdf').classList.remove('on');
+  refreshTypeUI();
   modalBg.classList.add('show');
 };
 document.getElementById('cancelBtn').onclick = ()=> modalBg.classList.remove('show');
 modalBg.onclick = (e)=>{ if(e.target===modalBg) modalBg.classList.remove('show'); };
-document.getElementById('saveBtn').onclick = ()=>{
+document.getElementById('saveBtn').onclick = async ()=>{
   const title = document.getElementById('fTitle').value.trim();
-  const url = document.getElementById('fUrl').value.trim();
-  if(!title || !url) return;
+  const urlInput = document.getElementById('fUrl').value.trim();
+  const file = pickedType==='pdf' ? document.getElementById('fFile').files[0] : null;
+  if(!title || (!urlInput && !file)) return;
+  if(file && file.size > 6*1024*1024){ alert('That file is too large (over 6MB). Please use a link instead.'); return; }
+
+  const saveBtn = document.getElementById('saveBtn');
+  saveBtn.disabled = true; saveBtn.textContent = 'Adding...';
+
+  let url = urlInput;
+  if(file){
+    url = await new Promise((res,rej)=>{
+      const reader = new FileReader();
+      reader.onload = ()=> res(reader.result);
+      reader.onerror = rej;
+      reader.readAsDataURL(file);
+    }).catch(()=>{ alert('Could not read that file.'); return null; });
+    if(!url){ saveBtn.disabled=false; saveBtn.textContent='Add'; return; }
+  }
+
   resources.push({ id:'r'+Date.now()+Math.random().toString(36).slice(2,7), subject:fSubject.value, type:pickedType, title, url });
+  document.getElementById('fFile').value = '';
+  document.getElementById('fileHint').textContent = '';
+  saveBtn.disabled = false; saveBtn.textContent = 'Add';
   modalBg.classList.remove('show');
   renderContent();
 };
