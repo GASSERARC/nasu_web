@@ -79,6 +79,15 @@ body.unlocked .adminbar{ display:flex; }
 .btn.primary{ background:var(--amber); color:var(--blue-deep); }
 .btn.ghost{ background:transparent; color:var(--paper-dim); border:1px solid #c7d4de; }
 #pwError{ color:#c0392b; font-size:12.5px; display:none; margin:-6px 0 12px; }
+.search-wrap{ padding:0 6vw 10px; }
+.search-wrap input{
+  width:100%; max-width:420px; padding:11px 16px; border-radius:999px;
+  border:1px solid var(--blue-line); background:rgba(255,255,255,.04); color:var(--ink);
+  font-family:'IBM Plex Sans',sans-serif; font-size:14px;
+}
+.search-wrap input::placeholder{ color:var(--ink-dim); }
+.search-wrap input:focus{ outline:none; border-color:var(--cyan); }
+.result-tag{ font-size:9.5px; color:var(--blue-soft,var(--ink-dim)); margin-inline-start:6px; }
 @media (max-width:640px){
   header{ padding-inline:5vw; } .tabs{ padding-inline:5vw; } main{ padding-inline:5vw; }
   .stamp{ font-size:10px; }
@@ -102,16 +111,23 @@ body.unlocked .adminbar{ display:flex; }
 
 <div id="loadError"></div>
 <div class="tabs" id="tabs"></div>
+<div class="search-wrap"><input id="searchInput" type="search" placeholder="Search all resources..."></div>
 
 <main>
-  <div class="sheet-head">
-    <h2 id="subjName">—</h2>
-    <span class="code mono" id="subjCode">—</span>
+  <div id="normalView">
+    <div class="sheet-head">
+      <h2 id="subjName">—</h2>
+      <span class="code mono" id="subjCode">—</span>
+    </div>
+    <div class="section-label"><span>Links</span><span class="ln"></span></div>
+    <div class="grid" id="linkGrid"></div>
+    <div class="section-label"><span>PDF Files</span><span class="ln"></span></div>
+    <div class="grid" id="pdfGrid"></div>
   </div>
-  <div class="section-label"><span>Links</span><span class="ln"></span></div>
-  <div class="grid" id="linkGrid"></div>
-  <div class="section-label"><span>PDF Files</span><span class="ln"></span></div>
-  <div class="grid" id="pdfGrid"></div>
+  <div id="searchView" style="display:none">
+    <div class="sheet-head"><h2 id="searchHead">—</h2></div>
+    <div class="grid" id="searchGrid"></div>
+  </div>
 </main>
 
 <button class="fab" id="fabAdd">+ Add</button>
@@ -184,7 +200,13 @@ SUBJECTS.forEach((s,i)=>{
   const b = document.createElement('button');
   b.className = 'tab' + (i===0?' active':'');
   b.innerHTML = '<span class="n mono">'+String(i+1).padStart(2,'0')+'</span><span>'+s.en+'</span>';
-  b.onclick = ()=>{ current = s.id; renderTabs(); renderContent(); };
+  b.onclick = ()=>{
+    current = s.id; renderTabs();
+    document.getElementById('searchInput').value = ''; lastQuery = '';
+    document.getElementById('normalView').style.display = 'block';
+    document.getElementById('searchView').style.display = 'none';
+    renderContent();
+  };
   tabsEl.appendChild(b);
 });
 function renderTabs(){ [...tabsEl.children].forEach((el,i)=> el.classList.toggle('active', SUBJECTS[i].id===current)); }
@@ -195,13 +217,14 @@ SUBJECTS.forEach(s=>{ const o=document.createElement('option'); o.value=s.id; o.
 
 function subjectById(id){ return SUBJECTS.find(s=>s.id===id); }
 
-function cardHtml(r){
+function cardHtml(r, showSubject){
   const icon = r.type==='video'
     ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>'
     : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/></svg>';
+  const subjTag = showSubject ? '<span class="result-tag mono">'+subjectById(r.subject).code+'</span>' : '';
   return '<div class="card" data-id="'+r.id+'"><button class="del" title="Remove">×</button>'
     + '<a href="'+r.url+'" target="_blank" rel="noopener">'
-    + '<div class="kind">'+icon+(r.type==='video'?'LINK':'PDF')+'</div>'
+    + '<div class="kind">'+icon+(r.type==='video'?'LINK':'PDF')+subjTag+'</div>'
     + '<div class="t">'+r.title+'</div></a></div>';
 }
 
@@ -226,6 +249,42 @@ function renderContent(){
     };
   });
 }
+
+function wireDeleteButtons(container){
+  container.querySelectorAll('.del').forEach(btn=>{
+    btn.onclick = (e)=>{
+      e.preventDefault(); e.stopPropagation();
+      if(!unlocked) return;
+      resources = resources.filter(r=>r.id !== btn.closest('.card').dataset.id);
+      renderSearchOrContent();
+    };
+  });
+}
+
+function renderSearch(query){
+  document.getElementById('normalView').style.display = 'none';
+  document.getElementById('searchView').style.display = 'block';
+  const q = query.toLowerCase();
+  const matches = resources.filter(r=> r.title.toLowerCase().includes(q) || subjectById(r.subject).en.toLowerCase().includes(q) || subjectById(r.subject).code.toLowerCase().includes(q));
+  document.getElementById('searchHead').textContent = matches.length ? matches.length + ' result(s) for "' + query + '"' : 'No results for "' + query + '"';
+  const grid = document.getElementById('searchGrid');
+  grid.innerHTML = matches.map(r=>cardHtml(r,true)).join('');
+  wireDeleteButtons(grid);
+}
+
+let lastQuery = '';
+function renderSearchOrContent(){
+  if(lastQuery.trim()) renderSearch(lastQuery); else renderContent();
+}
+document.getElementById('searchInput').addEventListener('input', (e)=>{
+  lastQuery = e.target.value;
+  if(lastQuery.trim()){
+    renderSearch(lastQuery);
+  } else {
+    document.getElementById('normalView').style.display = 'block';
+    document.getElementById('searchView').style.display = 'none';
+  }
+});
 
 // load data
 function showLoadError(msg){ const el=document.getElementById('loadError'); el.textContent=msg; el.style.display='block'; }
