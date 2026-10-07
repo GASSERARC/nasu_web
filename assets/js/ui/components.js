@@ -100,31 +100,6 @@ export function loadingState(label = 'Loading…') {
   return html`<div class="state state-loading" aria-busy="true"><span class="spinner" aria-hidden="true"></span><span>${label}</span></div>`;
 }
 
-export function passwordInput({ id, label, autocomplete, describedBy = '' }) {
-  return html`
-    <div class="field">
-      <label for="${id}">${label}</label>
-      <div class="pw-wrap">
-        <input id="${id}" name="${id}" type="password" autocomplete="${autocomplete}" required ${describedBy ? html`aria-describedby="${describedBy}"` : ''}>
-        <button type="button" class="pw-toggle" data-toggle-pw="${id}" aria-label="Show password" aria-pressed="false">${icons.eye}</button>
-      </div>
-    </div>`;
-}
-
-// Wires every show/hide-password button inside root.
-export function bindPasswordToggles(root) {
-  root.querySelectorAll('[data-toggle-pw]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const input = root.querySelector('#' + btn.dataset.togglePw);
-      const show = input.type === 'password';
-      input.type = show ? 'text' : 'password';
-      btn.setAttribute('aria-pressed', String(show));
-      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-      btn.innerHTML = String(show ? icons.eyeOff : icons.eye);
-    });
-  });
-}
-
 export function formError(id) {
   return html`<p class="form-error" id="${id}" role="alert" hidden></p>`;
 }
@@ -134,11 +109,11 @@ export function showFormError(el, message) {
   el.hidden = !message;
 }
 
-// Disable a submit button while an async action runs.
-export async function withBusy(button, busyLabel, fn) {
-  const label = button.textContent;
-  button.disabled = true;
-  button.textContent = busyLabel;
-  try { return await fn(); }
-  finally { button.disabled = false; button.textContent = label; }
+// Primary sign-in action. Logo per Microsoft's "Sign in with Microsoft" branding.
+export function microsoftButton(id) {
+  return html`
+    <button type="button" class="btn btn-ms btn-block" id="${id}">
+      <svg class="ms-logo" viewBox="0 0 21 21" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+      <span class="ms-label">Continue with NASU Microsoft Account</span>
+    </button>`;
 }

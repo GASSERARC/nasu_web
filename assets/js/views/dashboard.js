@@ -3,19 +3,22 @@ import { icons } from '../ui/icons.js';
 import { api } from '../services/api.js';
 import { sectionLabel, resourceList, announcementCard, subjectCard, emptyState } from '../ui/components.js';
 
-export default async function dashboard({ query }) {
+const settle = p => p.then(value => ({ value }), error => ({ error }));
+const panelError = err => html`<div class="state"><p class="state-text">${err.message}</p></div>`;
+
+export default async function dashboard() {
+  // The profile is required; the content panels may fail on their own.
   const [profile, subjects, recent, announcements] = await Promise.all([
     api.profile.getMine(),
     api.subjects.list(),
-    api.resources.recent(4),
-    api.announcements.list({ limit: 3 }),
+    settle(api.resources.recent(4)),
+    settle(api.announcements.list({ limit: 3 })),
   ]);
-  const firstName = profile.fullName.split(' ')[0];
+  const firstName = profile.fullName.split(' ')[0] || 'there';
 
   return {
     title: 'Dashboard',
     html: html`
-      ${query.welcome ? html`<p class="notice notice-ok" role="status">${icons.check} Your account is active. Welcome to the hub!</p>` : ''}
       <div class="page-head">
         <p class="eyebrow mono">DASHBOARD</p>
         <h1 class="page-title" tabindex="-1">Hello, ${firstName}</h1>
@@ -39,13 +42,15 @@ export default async function dashboard({ query }) {
       <div class="dash-cols">
         <section>
           ${sectionLabel('Announcements', html`<a class="see-all" href="#/announcements">See all</a>`)}
-          ${announcements.length
-            ? html`<div class="ann-list">${announcements.map(a => announcementCard(a, { compact: true }))}</div>`
-            : emptyState('No announcements yet')}
+          ${announcements.error ? panelError(announcements.error)
+            : announcements.value.length
+              ? html`<div class="ann-list">${announcements.value.map(a => announcementCard(a, { compact: true }))}</div>`
+              : emptyState('No announcements yet')}
         </section>
         <section>
           ${sectionLabel('Recently added', html`<a class="see-all" href="#/search">Browse</a>`)}
-          ${recent.length ? resourceList(recent, { showSubject: true }) : emptyState('Nothing added yet')}
+          ${recent.error ? panelError(recent.error)
+            : recent.value.length ? resourceList(recent.value, { showSubject: true }) : emptyState('Nothing added yet')}
         </section>
       </div>
 

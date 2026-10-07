@@ -1,51 +1,37 @@
 import { html } from '../ui/html.js';
 import { icons } from '../ui/icons.js';
-import { api } from '../services/api.js';
-import { passwordInput, bindPasswordToggles, formError, showFormError, withBusy } from '../ui/components.js';
+import { CONFIG } from '../config.js';
+import { MESSAGES } from '../services/errors.js';
+import { microsoftButton, formError, showFormError } from '../ui/components.js';
+import { bindMicrosoftSignIn } from '../ui/sign-in.js';
 
-export default async function login({ query, navigate, safeNext }) {
+export default async function login({ query, safeNext }) {
+  // ?error=<code> is set by the router when the Microsoft return failed.
+  const returnError = Object.hasOwn(MESSAGES, query.error || '') ? MESSAGES[query.error] : '';
+
   return {
-    title: 'Log in',
+    title: 'Sign in',
     html: html`
       <div class="auth">
         <div class="auth-card">
           <span class="auth-icon">${icons.lock}</span>
-          <h1 class="auth-title" tabindex="-1">Log in</h1>
-          <p class="auth-lead">Use your student ID and the password you created when you activated your account.</p>
-          <form id="loginForm" novalidate>
-            <div class="field">
-              <label for="studentId">Student ID</label>
-              <input id="studentId" name="studentId" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" required>
-            </div>
-            ${passwordInput({ id: 'password', label: 'Password', autocomplete: 'current-password' })}
-            ${formError('loginError')}
-            <button type="submit" class="btn btn-primary btn-block">Log in</button>
-          </form>
+          <h1 class="auth-title" tabindex="-1">Sign in to the hub</h1>
+          <p class="auth-lead">Use your NASU university Microsoft account — the same one you use for your <strong class="mono">@${CONFIG.auth.emailDomain}</strong> email.</p>
+          ${query.expired ? html`<p class="notice" role="status">Your session ended. Please sign in again.</p>` : ''}
+          ${query.signedout ? html`<p class="notice" role="status">You’ve signed out of the hub.</p>` : ''}
+          ${formError('signInError')}
+          ${microsoftButton('signInBtn')}
           <div class="auth-alt">
-            <p>First time here? <a href="#/activate">Activate your account</a></p>
-            <p class="muted">Forgot your password? Contact the prep-year office to reset it.</p>
+            <p><strong>Who can sign in?</strong> Prep-year engineering students with a NASU Microsoft account.</p>
+            <p class="muted">On a shared or public computer, also sign out of Microsoft when you’re done.</p>
+            <p class="muted">Can’t sign in? Contact the prep-year office.</p>
           </div>
         </div>
       </div>`,
     bind(root) {
-      bindPasswordToggles(root);
-      const form = root.querySelector('#loginForm');
-      const err = root.querySelector('#loginError');
-      if (query.id) form.studentId.value = query.id;
-      form.addEventListener('submit', async e => {
-        e.preventDefault();
-        const studentId = form.studentId.value.trim();
-        const password = form.password.value;
-        if (!studentId || !password) return showFormError(err, 'Enter your student ID and password.');
-        showFormError(err, '');
-        try {
-          await withBusy(form.querySelector('[type=submit]'), 'Logging in…', () => api.auth.signIn({ studentId, password }));
-          navigate(safeNext(query.next) || '/dashboard', { replace: true });
-        } catch (ex) {
-          showFormError(err, ex.message);
-          form.password.select();
-        }
-      });
+      const err = root.querySelector('#signInError');
+      showFormError(err, returnError);
+      bindMicrosoftSignIn(root.querySelector('#signInBtn'), err, safeNext(query.next));
     },
   };
 }

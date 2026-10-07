@@ -8,8 +8,6 @@ import { errorState, loadingState } from './ui/components.js';
 
 import landing from './views/landing.js';
 import login from './views/login.js';
-import activate from './views/activate.js';
-import createPassword from './views/create-password.js';
 import dashboard from './views/dashboard.js';
 import subjects from './views/subjects.js';
 import subject from './views/subject.js';
@@ -20,11 +18,13 @@ import notFound from './views/not-found.js';
 const content = CONFIG.requireLoginForContent;
 
 // auth: must be signed in · guestOnly: signed-in students are sent to the dashboard
+// redirect: retired routes from the old password/activation flow
 const ROUTES = [
   { path: '/', view: landing },
   { path: '/login', view: login, guestOnly: true },
-  { path: '/activate', view: activate, guestOnly: true },
-  { path: '/create-password', view: createPassword, guestOnly: true },
+  { path: '/activate', redirect: '/login' },
+  { path: '/activate/verify', redirect: '/login' },
+  { path: '/create-password', redirect: '/login' },
   { path: '/dashboard', view: dashboard, auth: true },
   { path: '/subjects', view: subjects, auth: content },
   { path: '/subjects/:id', view: subject, auth: content },
@@ -62,22 +62,50 @@ function safeNext(next) {
 }
 
 const app = document.getElementById('app');
+
+// Signed in with Microsoft, but the backend has no hub profile for this account.
+function noProfileState(session) {
+  return html`
+    <div class="state state-page">
+      <p class="eyebrow mono">NO HUB PROFILE</p>
+      <h1 class="page-title" tabindex="-1">We couldn’t find your student profile</h1>
+      <p class="state-text">You’re signed in as <strong class="mono">${session?.email || 'your NASU account'}</strong>, but this account isn’t set up in the hub yet. If you’re a prep-year engineering student, contact the prep-year office.</p>
+      <button type="button" class="btn btn-ghost" data-action="sign-out">Sign out</button>
+    </div>`;
+}
 let renderSeq = 0;
 
 async function router() {
   const seq = ++renderSeq;
   const { path, qs, query } = parseHash();
-  const session = await api.auth.getSession().catch(() => null);
+  const found = matchRoute(path);
+  const route = found?.route;
+
+  // Resolve the session BEFORE any guard runs, so nothing redirects while auth
+  // is still initialising. If it can't be determined, show a retry instead of
+  // guessing "signed out" (which could bounce the student to login).
+  let session;
+  try {
+    session = await api.auth.getSession();
+  } catch (err) {
+    if (seq !== renderSeq) return;
+    renderLayout({ session: null, path });
+    mount(app, html`<div class="page-pad">${errorState(err)}</div>`);
+    app.querySelector('[data-action=retry]')?.addEventListener('click', router);
+    return;
+  }
   if (seq !== renderSeq) return;
 
-  const found = matchRoute(path);
-  if (found?.route.auth && !session) {
+  if (route?.redirect) {
+    return navigate(route.redirect, { replace: true });
+  } else if (route?.auth && !session) {
     return navigate('/login?next=' + encodeURIComponent(path + (qs ? '?' + qs : '')), { replace: true });
+  } else if (route?.guestOnly && session) {
+    return navigate('/dashboard', { replace: true });
   }
-  if (found?.route.guestOnly && session) return navigate('/dashboard', { replace: true });
 
   renderLayout({ session, path });
-  const view = found ? found.route.view : notFound;
+  const view = route ? route.view : notFound;
   const ctx = { params: found?.params || {}, query, session, navigate, safeNext };
 
   // Show a spinner only if loading is noticeably slow.
@@ -90,7 +118,15 @@ async function router() {
     out.bind?.(app);
   } catch (err) {
     if (seq !== renderSeq) return;
-    if (err.code === 'unauthenticated') return navigate('/login', { replace: true });
+    if (err.code === 'unauthenticated') {
+      await api.auth.signOut().catch(() => {});
+      return navigate('/login?expired=1', { replace: true });
+    }
+    if (err.code === 'profile_missing') {
+      document.title = 'No access · NASU Freshmen Hub';
+      mount(app, noProfileState(session));
+      return;
+    }
     document.title = 'Error · NASU Freshmen Hub';
     mount(app, html`<div class="page-pad">${errorState(err)}</div>`);
     app.querySelector('[data-action=retry]')?.addEventListener('click', router);
@@ -112,11 +148,33 @@ document.addEventListener('submit', e => {
   navigate('/search' + (q ? '?q=' + encodeURIComponent(q) : ''));
 });
 
+let signingOut = false;
 document.addEventListener('click', async e => {
-  if (!e.target.closest('[data-action="sign-out"]')) return;
+  if (!e.target.closest('[data-action="sign-out"]') || signingOut) return;
+  signingOut = true;
   await api.auth.signOut().catch(() => {});
-  navigate('/login', { replace: true });
+  navigate('/login?signedout=1', { replace: true });
+  signingOut = false;
 });
 
-window.addEventListener('hashchange', router);
-router();
+// Session ended outside the sign-out button (expired, revoked, other tab): re-check guards.
+api.auth.onChange(type => { if (type === 'signed_out' && !signingOut) router(); });
+
+// Returning from Microsoft sign-in: finish it before any routing happens, so
+// guards never see a half-finished sign-in.
+async function start() {
+  if (api.auth.isSignInReturn()) {
+    renderLayout({ session: null, path: '/login' });
+    mount(app, loadingState('Signing you in…'));
+    try {
+      const { next } = await api.auth.completeSignIn();
+      navigate(safeNext(next) || '/dashboard', { replace: true });
+    } catch (err) {
+      navigate('/login?error=' + encodeURIComponent(err.code || 'sign_in_failed'), { replace: true });
+    }
+  }
+  window.addEventListener('hashchange', router);
+  router();
+}
+
+start();

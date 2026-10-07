@@ -2,7 +2,7 @@
 
 import { html, mount } from './html.js';
 import { icons } from './icons.js';
-import { isDemoMode } from '../services/api.js';
+import { isDemoMode, usesSampleContent } from '../services/api.js';
 
 const NAV = [
   { href: '#/dashboard', match: '/dashboard', label: 'Home', icon: icons.home },
@@ -18,9 +18,11 @@ export function renderLayout({ session, path }) {
   const bottomnav = document.getElementById('bottomnav');
   const banner = document.getElementById('demoBanner');
 
-  banner.hidden = !isDemoMode;
+  banner.hidden = !isDemoMode && !usesSampleContent;
   if (isDemoMode) {
-    mount(banner, html`<strong>Demo mode</strong> — sample data only. Any student ID and password will work; nothing is saved to a server.`);
+    mount(banner, html`<strong>Development mock</strong> — no real accounts. “Continue with Microsoft” signs in a fake demo student without contacting Microsoft.`);
+  } else if (usesSampleContent) {
+    mount(banner, html`<strong>Preview</strong> — course material and announcements shown are samples while the hub is being connected.`);
   }
 
   const brand = html`
@@ -42,7 +44,7 @@ export function renderLayout({ session, path }) {
         ${icons.search}
         <input type="search" name="q" placeholder="Search resources…" aria-label="Search resources" autocomplete="off">
       </form>
-      <button type="button" class="icon-btn" data-action="sign-out" aria-label="Log out" title="Log out">${icons.logout}</button>
+      <button type="button" class="icon-btn" data-action="sign-out" aria-label="Sign out" title="Sign out">${icons.logout}</button>
     `);
     mount(bottomnav, html`${NAV.map(n => html`
       <a href="${n.href}" class="${isActive(n, path) ? 'active' : ''}" ${isActive(n, path) ? html`aria-current="page"` : ''}>
@@ -54,8 +56,7 @@ export function renderLayout({ session, path }) {
     mount(topbar, html`
       ${brand}
       <div class="top-actions">
-        ${path !== '/login' ? html`<a class="btn btn-ghost" href="#/login">Log in</a>` : ''}
-        ${path !== '/activate' && path !== '/create-password' ? html`<a class="btn btn-primary" href="#/activate">Activate<span class="hide-sm"> account</span></a>` : ''}
+        ${path !== '/login' ? html`<a class="btn btn-ghost" href="#/login">Sign in</a>` : ''}
       </div>
     `);
     mount(bottomnav, '');

@@ -1,85 +1,165 @@
 # Frontend ↔ backend contract
 
-The frontend is a static site (no build step). Every view talks only to
+Static site, no build step. Every view talks only to
 `assets/js/services/api.js`, which delegates to one backend module:
 
-| `CONFIG.backend` (`assets/js/config.js`) | Module | Status |
+| `CONFIG.backend` | Module | Use |
 |---|---|---|
-| `'mock'` (default) | `services/mock-backend.js` | Demo data, accepts any well-formed input |
-| `'supabase'` | `services/supabase-backend.js` | Stub — every function throws `not_configured` |
+| `'supabase'` (default) | `services/supabase-backend.js` | Real backend |
+| `'mock'` | `services/mock-backend.js` | **DEV ONLY** — fake demo student, never contacts Microsoft or Supabase |
 
-To connect the real backend, implement the functions in `supabase-backend.js`
-with the signatures below and switch `CONFIG.backend`. No view needs to change.
+The single Supabase client lives in `services/supabase-client.js`.
 
-## Rules for the frontend
+> ⚠️ **Never put a `service_role` key, a secret (`sb_secret_…`) key, an Azure
+> client secret, a database password, the student roster or application data
+> in frontend code.** Everything under `assets/` is downloaded by every visitor.
+> `tests/static-security.test.mjs` fails if any of these appear.
 
-- Only public values go in `config.js` (Supabase URL + **anon** key). Never a
-  service-role key, admin password, activation code or student roster.
-- Activation-code checks, password policy, rate limiting and data access are
-  enforced on the backend. The frontend's password checklist is UX only.
-- Error messages for failed activation/login should not reveal whether the
-  student ID exists.
+## Sign-in model
 
-## Functions
+**NASU Microsoft (Azure / Entra ID) SSO is the only way to sign in**, through
+Supabase Auth's `azure` OAuth provider. There are no passwords, activation
+codes or emailed one-time codes in the frontend.
 
-All functions are async. On failure they throw `ApiError(code, message)`
-(`services/errors.js`); `message` is shown to the student as-is.
+## Public configuration (`assets/js/config.js`)
 
-### Auth
+All values are public by design:
 
-| Function | Input | Resolves to | Error codes |
-|---|---|---|---|
-| `getSession()` | — | `Session \| null` | — |
-| `signIn` | `{ studentId, password }` | `Session` | `invalid_input`, `invalid_credentials` |
-| `signOut()` | — | — | — |
-| `verifyActivation` | `{ studentId, code }` | — (backend remembers the verified activation) | `invalid_input`, `activation_failed` |
-| `getPendingActivation()` | — | `{ studentId } \| null` | — |
-| `completeActivation` | `{ password }` | `Session` (student is signed in) | `invalid_input`, `activation_expired` |
+| Key | Value |
+|---|---|
+| `supabase.url` | `https://hfrnfkmlqxnajocxkzpq.supabase.co` |
+| `supabase.publishableKey` | `sb_publishable_…` (publishable key only) |
+| `supabase.clientUrl` | supabase-js ESM build, pinned (`@2.117.2`, jsdelivr) |
+| `auth.provider` | `'azure'` |
+| `auth.scopes` | `'email profile'` (Supabase adds `openid`) |
+| `auth.emailDomain` | `nasu.edu.eg` — **UX only** |
+| `auth.queryParams` | `{ domain_hint: 'nasu.edu.eg', prompt: 'select_account' }` — pre-selects NASU and shows the account picker (useful on shared devices) |
+| `contentSource` | `'mock'` until content tables exist (shows a "Preview" banner) |
 
-`verifyActivation` → `completeActivation` is a two-step flow across two pages.
-How the verified state is carried between them (short-lived token, Edge
-Function session, etc.) is the backend's choice. If it has expired,
-`completeActivation` must throw `activation_expired`, and the UI sends the
-student back to the activation page.
+## Responsibilities
 
-### Data
+**Frontend**
+- One primary action: **Continue with NASU Microsoft Account**
+  (`supabase.auth.signInWithOAuth({ provider: 'azure', … })`).
+- Finish the PKCE redirect, keep/restore the session, sign out.
+- Route guards (UX only — **not** a security boundary).
+- Simple messages chosen from error **codes** (`services/errors.js`); server
+  error text is never shown. Technical details go to the console only on
+  `localhost` / `127.0.0.1`.
+- UX check: a session whose email isn't `@nasu.edu.eg` is signed out locally
+  with "Please sign in with your NASU university Microsoft account".
 
-| Function | Input | Resolves to |
-|---|---|---|
-| `getMyProfile()` | — | `Profile` (throw `unauthenticated` if signed out) |
-| `listSubjects()` | — | `Subject[]` with `resourceCount` |
-| `getSubject(id)` | `id` | `Subject` (throw `not_found`) |
-| `listResources` | `{ subjectId?, limit? }` | `Resource[]`, newest first |
-| `searchResources` | `{ query, subjectId, category }` (empty string = any) | `Resource[]` |
-| `listAnnouncements` | `{ subjectId?, limit? }` | `Announcement[]`, pinned first then newest |
+**Backend** (unchanged by the frontend)
+- Azure provider configuration (tenant, client ID/secret) in Supabase.
+- Deciding who may sign in (tenant restriction, hooks, approved-student checks).
+- Creating/linking `profiles`; RLS on every table.
+- `get_my_profile()` returns only the caller's own row.
 
-## Shapes
+## Auth lifecycle
 
-```js
-Session      = { studentId }
-Profile      = { fullName, studentId, group, section }
-Subject      = { id, code, name, resourceCount? }
-Resource     = {
-  id, subjectId,
-  category,          // 'lecture' | 'tutorial' | 'board' | 'pdf' | 'assignment'
-  title,
-  url,               // http(s) only; anything else is rendered as non-clickable
-  format,            // 'pdf' | 'link'
-  addedAt,           // ISO date
-  week,              // number | null
-  dueAt,             // ISO date | null (assignments)
-}
-Announcement = { id, title, body, subjectId /* null = general */, publishedAt, pinned, author }
+```
+Landing or /login ── "Continue with NASU Microsoft Account"
+   │  api.auth.startSignIn({ next })        next = protected route the student wanted
+   │    └─ signInWithOAuth({ provider:'azure', redirectTo: <site origin + path> })
+   ▼
+Microsoft sign-in (login.microsoftonline.com) → Supabase /auth/v1/callback
+   ▼
+<site>/?code=…   (or ?error=…)
+   │  app.js start(): api.auth.completeSignIn() BEFORE any routing
+   │    1. strips ?code / ?error from the address bar (history.replaceState)
+   │    2. exchangeCodeForSession(code)        (PKCE verifier from this browser)
+   │    3. non-@nasu.edu.eg email → local sign-out → "wrong_account"
+   ▼
+#/<next> or #/dashboard  → rpc('get_my_profile')
+   - no profile row → "No hub profile" screen with Sign out
+reload       auth.getSession() restores the persisted session
+sign out     auth.signOut() → /login?signedout=1
+elsewhere    onAuthStateChange('SIGNED_OUT') → guards re-run → /login
 ```
 
-Subject ids currently used: `math1`, `vib`, `stat`, `chem`, `soc`, `draw`
-(see `assets/js/data/catalog.js`).
+Guards run only **after** the session is known. If it can't be determined
+(e.g. the client failed to load) a retry screen is shown instead of redirecting.
 
-`services/normalize.js` can be reused to map database rows to these shapes.
+| Route | Rule |
+|---|---|
+| `/`, 404 | public (landing has the Microsoft button) |
+| `/login` | guests only (signed-in → `/dashboard`) |
+| `/activate`, `/activate/verify`, `/create-password` | retired → `/login` |
+| `/dashboard`, `/subjects…`, `/search`, `/announcements` | signed in |
 
-## Legacy data
+Errors returned from the redirect are mapped (details logged in dev only):
 
-The mock backend still reads `resources.json` from the original site. Legacy
-`type: 'video'` becomes category `lecture` and `type: 'pdf'` becomes `pdf`.
-Base64 `data:` URLs from the old in-browser upload are no longer rendered as
-links.
+| Return | Shown as |
+|---|---|
+| `error_description` mentions cancel/declined/consent | "Sign-in was cancelled…" |
+| `access_denied`, signup not allowed, hook rejection | "Your NASU account couldn't be signed in to the hub… contact the prep-year office." |
+| rate limit | "Too many attempts…" |
+| bad/used code, verifier missing (started in another browser) | "Sign-in didn't complete. Please try again." |
+| non-NASU email | "Please sign in with your NASU university Microsoft account (@nasu.edu.eg)." |
+
+## `get_my_profile()` contract
+
+```js
+supabase.rpc('get_my_profile')   // no arguments — ever
+```
+
+Returns one row (object or single-element array):
+
+```json
+{ "full_name": "string", "student_id": "string", "group_name": "string", "section": "string" }
+```
+
+- `SECURITY INVOKER`, `authenticated` only; anon receives `42501` (verified on
+  the live project) → frontend signs out locally and shows "session ended".
+- Empty result → "No hub profile" screen (signed in, but not set up).
+
+## Backend / Supabase settings the frontend depends on
+
+1. **Redirect URLs** (Auth → URL Configuration) must include every origin+path
+   the site is served from, exactly as `location.origin + location.pathname`:
+   - the production URL (e.g. `https://<user>.github.io/nasu_web/`)
+   - `http://127.0.0.1:5173/` for local development
+2. **Site URL** set to the production URL (used if `redirectTo` is rejected).
+3. Azure provider enabled with the NASU tenant URL, so only NASU accounts can
+   authenticate — verified: the authorize step reaches the NASU tenant at
+   `login.microsoftonline.com/<tenant-id>/…`.
+4. The account's **email claim** must be present (the frontend reads
+   `session.user.email` for the `@nasu.edu.eg` UX check and to display it).
+
+## Service functions
+
+| Function | Resolves to |
+|---|---|
+| `api.auth.getSession()` | `{ email, studentId } \| null` |
+| `api.auth.startSignIn({ next })` | navigates to Microsoft |
+| `api.auth.isSignInReturn()` | `true` on the OAuth return page load |
+| `api.auth.completeSignIn()` | `{ next }` |
+| `api.auth.signOut()` | — (`auth.signOut()`, default scope) |
+| `api.auth.onChange(cb)` | `cb('signed_in' \| 'signed_out')` |
+| `api.profile.getMine()` | `{ fullName, studentId, group, section }` |
+| `api.subjects.*`, `api.resources.*`, `api.announcements.*` | sample content while `contentSource: 'mock'` |
+
+## Course content (later)
+
+Proposed read-only tables for authenticated students:
+- `resources`: `id, subject_id, category, title, url, format, added_at, week, due_at`
+- `announcements`: `id, title, body, subject_id (null = general), published_at, pinned, author`
+
+`category` ∈ `lecture | tutorial | board | pdf | assignment`; subject ids
+`math1, vib, stat, chem, soc, draw`. `services/normalize.js` maps these rows.
+
+Admin tools are intentionally absent until role-based authorization exists on
+the backend. The old client-side admin password has been removed.
+
+## Tests
+
+```bash
+node --test tests/*.test.mjs
+```
+
+- `tests/identity.test.mjs` — `@nasu.edu.eg` detection (incl. look-alike
+  domains) and Student ID extraction.
+- `tests/static-security.test.mjs` — no secret/service keys or JWTs, only a
+  publishable key, no private table names or `.from()` queries, no admin
+  password, no password/OTP/activation-code auth or inputs, exactly one
+  `signInWithOAuth` with provider `azure`, `rpc('get_my_profile')` only.

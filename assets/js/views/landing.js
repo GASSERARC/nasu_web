@@ -2,6 +2,8 @@ import { html } from '../ui/html.js';
 import { icons } from '../ui/icons.js';
 import { SUBJECTS } from '../data/catalog.js';
 import { pad2 } from '../ui/format.js';
+import { microsoftButton, formError } from '../ui/components.js';
+import { bindMicrosoftSignIn } from '../ui/sign-in.js';
 
 export default async function landing({ session }) {
   return {
@@ -15,18 +17,17 @@ export default async function landing({ session }) {
           ${session
             ? html`<a class="btn btn-primary btn-lg" href="#/dashboard">Open your dashboard</a>`
             : html`
-              <a class="btn btn-primary btn-lg" href="#/activate">Activate your account</a>
-              <a class="btn btn-ghost btn-lg" href="#/login">I already have a password</a>`}
+              <div class="hero-signin">${microsoftButton('heroSignIn')}${formError('heroSignInError')}</div>`}
         </div>
       </section>
 
       ${session ? '' : html`
       <section class="steps" aria-labelledby="stepsTitle">
-        <h2 class="section-label" id="stepsTitle"><span>First time here?</span><span class="ln"></span></h2>
+        <h2 class="section-label" id="stepsTitle"><span>How to sign in</span><span class="ln"></span></h2>
         <ol class="step-list">
-          <li><span class="step-n mono">01</span><div><strong>Get your activation code</strong><p>Your faculty gives every student a one-time activation code with their student ID.</p></div></li>
-          <li><span class="step-n mono">02</span><div><strong>Activate your account</strong><p>Enter your student ID and the code, then choose your own password.</p></div></li>
-          <li><span class="step-n mono">03</span><div><strong>Log in any time</strong><p>From then on, sign in with your student ID and password — on your phone or laptop.</p></div></li>
+          <li><span class="step-n mono">01</span><div><strong>Use your NASU account</strong><p>Sign in with the Microsoft account you use for your <span class="mono">@nasu.edu.eg</span> email.</p></div></li>
+          <li><span class="step-n mono">02</span><div><strong>No extra password</strong><p>There’s nothing to register or remember — the hub uses your university sign-in.</p></div></li>
+          <li><span class="step-n mono">03</span><div><strong>Open your dashboard</strong><p>See your group, section, subjects and announcements — on your phone or laptop.</p></div></li>
         </ol>
       </section>`}
 
@@ -42,5 +43,9 @@ export default async function landing({ session }) {
         <div class="feature">${icons.search}<h3>Search everything</h3><p>Find a sheet or lecture across all subjects in seconds.</p></div>
         <div class="feature">${icons.bell}<h3>Never miss a notice</h3><p>Room changes, deadlines and reminders in one feed.</p></div>
       </section>`,
+    bind(root) {
+      const btn = root.querySelector('#heroSignIn');
+      if (btn) bindMicrosoftSignIn(btn, root.querySelector('#heroSignInError'));
+    },
   };
 }

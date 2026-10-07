@@ -134,20 +134,10 @@ main { display: block; max-width: var(--max); margin: 0 auto; padding: 8px var(-
   font: inherit; font-size: 16px; /* 16px stops iOS zooming on focus */
 }
 .field input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(18, 64, 108, .15); }
-.code-input { letter-spacing: .18em; text-transform: uppercase; }
 .help { font-size: 12.5px; color: var(--paper-dim); margin: 6px 0 0; }
 .help.ok { color: var(--ok-ink); }
 .help.bad { color: var(--bad); }
-.pw-wrap { position: relative; }
-.pw-wrap input { padding-right: 48px; }
-.pw-toggle { position: absolute; right: 1px; top: 1px; bottom: 1px; width: 46px; border: none; background: transparent; color: var(--paper-dim); cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: var(--radius); }
-.pw-toggle:hover { color: var(--blue); }
 .form-error { background: var(--bad-soft); color: #8a1f1f; font-size: 13.5px; padding: 10px 12px; border-radius: var(--radius); margin: 0 0 14px; }
-.rules { list-style: none; padding: 0; margin: -6px 0 16px; display: grid; gap: 4px; }
-.rules li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--paper-dim); }
-.rules li svg { width: 16px; height: 16px; padding: 2px; border-radius: 50%; border: 1px solid var(--paper-line); color: transparent; }
-.rules li.ok { color: var(--ok-ink); }
-.rules li.ok svg { background: var(--ok); border-color: var(--ok); color: #fff; }
 
 .notice { display: flex; align-items: center; gap: 8px; background: rgba(124, 196, 230, .1); border: 1px solid rgba(124, 196, 230, .35); color: var(--ink); padding: 10px 14px; border-radius: var(--radius); font-size: 14px; margin: 16px 0 0; }
 .auth-card .notice { background: #e6f2f9; color: var(--blue); border-color: #bcdcee; margin: 0 0 16px; }
@@ -211,12 +201,6 @@ main { display: block; max-width: var(--max); margin: 0 auto; padding: 8px var(-
 .auth-alt a { color: var(--blue); font-weight: 700; }
 .auth-alt .muted { color: var(--paper-dim); font-size: 13px; }
 
-.progress { list-style: none; padding: 0; margin: 0 0 20px; display: flex; gap: 8px; }
-.progress li { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; color: var(--paper-dim); padding-bottom: 8px; border-bottom: 3px solid var(--paper-line); }
-.progress li span { width: 22px; height: 22px; border-radius: 50%; border: 1px solid currentColor; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
-.progress li span svg { width: 13px; height: 13px; }
-.progress li.on { color: var(--blue); border-color: var(--amber); }
-.progress li.done { color: var(--ok-ink); border-color: var(--ok); }
 
 /* ---------- dashboard ---------- */
 
@@ -370,3 +354,15 @@ a.res:hover .res-go { color: var(--blue); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+
+/* Microsoft sign-in (light button per Microsoft branding, on the blueprint theme) */
+.btn-ms { background: #fff; color: #1b1b1b; border-color: #8c8c8c; font-weight: 600; min-height: 50px; gap: 12px; }
+.btn-ms:hover:not(:disabled) { background: #f3f3f3; }
+.btn-ms .ms-logo { width: 20px; height: 20px; }
+.btn-ms:disabled { opacity: .8; }
+.hero-signin { display: grid; gap: 12px; width: 100%; max-width: 380px; }
+.hero-signin .form-error { margin: 0; }
+.auth-card .btn-ms { margin-bottom: 4px; }
+.auth-card .form-error:not([hidden]) + .btn-ms { margin-top: 0; }
+@media (max-width: 719px) { .hero-signin { max-width: none; } }

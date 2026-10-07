@@ -1,16 +1,15 @@
-// DEMO backend — no real accounts, no real student data.
+// DEV ONLY — mock backend for frontend development (CONFIG.backend = 'mock').
 //
-// It accepts any well-formed input so the UI flows can be tried end to end.
-// There are deliberately NO activation codes, passwords or roster entries here:
-// real verification happens only on the backend.
+// No real accounts and no real student data. "Continue with Microsoft" signs
+// in a fake demo student immediately, without contacting Microsoft or Supabase.
 
 import { CONFIG } from '../config.js';
 import { SUBJECTS, subjectById } from '../data/catalog.js';
 import { ApiError } from './errors.js';
+import { studentIdFromEmail } from './identity.js';
 import { normalizeResource, normalizeAnnouncement, matchesQuery } from './normalize.js';
 
-const SESSION_KEY = 'nasu.demo.session';
-const PENDING_KEY = 'nasu.demo.pendingActivation';
+const SESSION_KEY = 'nasu.mock.session';
 
 // sessionStorage can throw (private mode, blocked storage) — fall back to memory.
 const memory = new Map();
@@ -21,60 +20,42 @@ const store = {
 };
 
 const delay = (ms = 350) => new Promise(r => setTimeout(r, ms));
+const sessionFor = email => ({ email, studentId: studentIdFromEmail(email, CONFIG.auth.emailDomain), mock: true });
 
-/* ---------- auth ---------- */
+/* ---------- auth (mock) ---------- */
 
 export async function getSession() {
   return store.get(SESSION_KEY);
 }
 
-export async function signIn({ studentId, password }) {
+// MOCK: no Microsoft round-trip — pretends the provider redirected straight back.
+export async function startSignIn({ redirectTo }) {
   await delay();
-  if (!studentId || !password) throw new ApiError('invalid_input', 'Enter your student ID and password.');
-  const session = { studentId, demo: true };
+  const url = new URL(redirectTo);
+  url.searchParams.set('code', 'mock');
+  location.assign(url.href);
+}
+
+export async function completeSignIn() {
+  await delay();
+  const session = sessionFor(`demo.student@${CONFIG.auth.emailDomain}`);
   store.set(SESSION_KEY, session);
   return session;
 }
 
 export async function signOut() {
   store.del(SESSION_KEY);
-  store.del(PENDING_KEY);
 }
 
-export async function verifyActivation({ studentId, code }) {
-  await delay(500);
-  if (!studentId || !code) throw new ApiError('invalid_input', 'Enter your student ID and activation code.');
-  if (code.length < 6) throw new ApiError('activation_failed', 'That student ID and activation code don’t match. Check both and try again.');
-  store.set(PENDING_KEY, { studentId, verifiedAt: Date.now() });
-}
-
-export async function getPendingActivation() {
-  const p = store.get(PENDING_KEY);
-  // Mirror a real short-lived activation window.
-  if (p && Date.now() - p.verifiedAt > 15 * 60 * 1000) { store.del(PENDING_KEY); return null; }
-  return p ? { studentId: p.studentId } : null;
-}
-
-export async function completeActivation({ password }) {
-  await delay(500);
-  const pending = await getPendingActivation();
-  if (!pending) throw new ApiError('activation_expired', 'Your activation step expired. Please enter your student ID and code again.');
-  if (!password || password.length < 8) throw new ApiError('invalid_input', 'Password must be at least 8 characters.');
-  store.del(PENDING_KEY);
-  const session = { studentId: pending.studentId, demo: true };
-  store.set(SESSION_KEY, session);
-  return session;
-}
-
-/* ---------- profile ---------- */
+/* ---------- profile (mock) ---------- */
 
 export async function getMyProfile() {
   await delay(200);
   const session = await getSession();
-  if (!session) throw new ApiError('unauthenticated', 'Please log in.');
+  if (!session) throw new ApiError('unauthenticated');
   return {
     fullName: 'Demo Student',
-    studentId: session.studentId,
+    studentId: session.studentId || '—',
     group: 'Group — (placeholder)',
     section: 'Section — (placeholder)',
   };
